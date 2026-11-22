@@ -1,0 +1,169 @@
+// ===================================================
+// ⚙️ ส่วนที่ 1: ตั้งค่าระบบ (กรอกข้อมูลสำคัญของคุณที่นี่)
+// ===================================================
+var TELEGRAM_BOT_TOKEN = '7591324312:AAHzm21R4lMm6rv-i0N6DEUagOMDey97A-I'; // เช่น '7123456789:ABCdef...'
+var TELEGRAM_CHAT_ID   = '8045835545';   // เช่น '-1001234567890' (กลุ่ม) หรือ '123456789' (ส่วนตัว)
+
+// 📍 ตั้งค่าเชื่อมโยง Google Sheets แบบเจาะจง (Specific Sheet & Tab)
+var SPREADSHEET_ID     = '1Rhnx4ge3Y5FZBKWpI-eVPYK_E-wqHo6dAMzdVNy6hpg';     // หาได้จาก URL ของ Google Sheets ของคุณ
+var TAB_DATES_NAME     = 'Dates';                   // ชื่อแท็บที่เก็บรายการวันที่เปิดให้ลาทั้งหมด
+var TAB_BOOKINGS_NAME  = 'Bookings';                // ชื่อแท็บที่ใช้บันทึกประวัติการจองลา
+var TAB_VIEW_NAME      = 'View';                    // แท็บ View สำหรับแสดงตาราง
+
+// ===================================================
+// 🌐 ส่วนที่ 2: ฟังก์ชันหลักของระบบ WEB APP
+// ===================================================
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('ระบบจองวันลาและตารางเวรปฏิบัติงาน')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+// ดึงข้อมูลจากแท็บ View ไปแสดงบนตารางหน้าเว็บ
+function getViewData() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var viewSheet = ss.getSheetByName(TAB_VIEW_NAME);
+  
+  if (!viewSheet) {
+    throw new Error('ไม่พบแท็บชื่อ "' + TAB_VIEW_NAME + '" ใน Google Sheets');
+  }
+  
+  var lastRow = viewSheet.getLastRow();
+  if (lastRow <= 1) {
+    return [];
+  }
+  
+  var values = viewSheet.getRange(2, 1, lastRow - 1, 5).getDisplayValues();
+  return values;
+}
+
+// ฟังก์ชันดึงเฉพาะวันที่ที่ยังว่างอยู่
+function getAvailableDates() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var dateSheet = ss.getSheetByName(TAB_DATES_NAME);
+  var bookingSheet = ss.getSheetByName(TAB_BOOKINGS_NAME);
+  
+  if (!dateSheet || !bookingSheet) {
+    throw new Error('กรุณาตรวจสอบว่ามีแท็บชื่อ "' + TAB_DATES_NAME + '" และ "' + TAB_BOOKINGS_NAME + '" อยู่ในระบบ');
+  }
+  
+  var lastDateRow = dateSheet.getLastRow();
+  var allDates = [];
+  if (lastDateRow > 1) {
+    allDates = dateSheet.getRange(2, 1, lastDateRow - 1, 1).getDisplayValues().flat();
+  }
+  
+  var bookedDates = [];
+  var lastBookingRow = bookingSheet.getLastRow();
+  if (lastBookingRow > 1) {
+    bookedDates = bookingSheet.getRange(2, 3, lastBookingRow - 1, 1).getDisplayValues().flat();
+  }
+  
+  return allDates.filter(function(date) {
+    return date.trim() !== "" && bookedDates.indexOf(date.trim()) === -1;
+  });
+}
+
+// ฟังก์ชันบันทึกการจองวันลา
+function submitBooking(name, selectedDate, backupName, phoneNumber) {
+  name = name ? name.trim() : "";
+  backupName = backupName ? backupName.trim() : "";
+  phoneNumber = phoneNumber ? phoneNumber.trim() : "";
+  selectedDate = selectedDate ? selectedDate.trim() : "";
+  
+  if (!name || !selectedDate) {
+    return {
+      success: false,
+      message: '❌ บันทึกไม่สำเร็จ: กรุณากรอกชื่อ-นามสกุล และเลือกวันที่ต้องการลา',
+      updatedDates: getAvailableDates(),
+      updatedView: getViewData()
+    };
+  }
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { 
+      success: false, 
+      message: '⏳ ระบบหนาแน่นชั่วคราว กรุณากดยืนยันอีกครั้งครับ' 
+    };
+  }
+  
+  try {
+    var availableDates = getAvailableDates();
+    if (availableDates.indexOf(selectedDate) === -1) {
+      return {
+        success: false,
+        message: '❌ ขออภัยครับ วันที่ "' + selectedDate + '" เพิ่งมีผู้ใช้ท่านอื่นจองตัดหน้าไปเมื่อสักครู่',
+        updatedDates: availableDates,
+        updatedView: getViewData()
+      };
+    }
+    
+    var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var bookingSheet = ss.getSheetByName(TAB_BOOKINGS_NAME);
+    var timestamp = new Date();
+    
+    bookingSheet.appendRow([timestamp, name, selectedDate, backupName, phoneNumber]);
+    SpreadsheetApp.flush(); // บังคับอัปเดตสูตรในแท็บ View ทันที
+    
+    // ยิงแจ้งเตือนผ่าน Telegram
+    sendTelegramNotification(name, selectedDate, backupName, phoneNumber, timestamp);
+    
+    return {
+      success: true,
+      message: '✅ บันทึกคำขอลาสำหรับคุณ "' + name + '" ประจำวันที่ ' + selectedDate + ' เรียบร้อยแล้ว!',
+      updatedDates: getAvailableDates(),
+      updatedView: getViewData()
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'เกิดข้อผิดพลาด: ' + err.toString(),
+      updatedDates: getAvailableDates(),
+      updatedView: getViewData()
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ===================================================
+// 🔔 ส่วนที่ 3: ระบบยิง API ส่งข้อความ TELEGRAM
+// ===================================================
+function sendTelegramNotification(name, selectedDate, backupName, phoneNumber, timestamp) {
+  try {
+    var formattedTime = Utilities.formatDate(timestamp, "Asia/Bangkok", "dd/MM/yyyy HH:mm:ss");
+    var displayPhone = phoneNumber ? phoneNumber : "ไม่ได้ระบุ";
+    var displayBackup = backupName ? backupName : "ไม่ได้ระบุ";
+    
+    var textMessage = "📢 *มีการแจ้งจองวันลาใหม่!*\n" +
+                      "────────────────\n" +
+                      "👤 *ผู้ขอลา:* " + name + "\n" +
+                      "📞 *เบอร์โทรศัพท์:* " + displayPhone + "\n" +
+                      "📅 *วันที่ลา:* " + selectedDate + "\n" +
+                      "🤝 *คนทำงานแทน:* " + displayBackup + "\n" +
+                      "⏰ *เวลาที่บันทึก:* " + formattedTime + " น.\n" +
+                      "────────────────\n" +
+                      "📌 _ระบบบันทึกลง Google Sheets เรียบร้อยแล้ว_";
+
+    var url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage";
+    var payload = {
+      "chat_id": TELEGRAM_CHAT_ID,
+      "text": textMessage,
+      "parse_mode": "Markdown"
+    };
+
+    UrlFetchApp.fetch(url, {
+      "method": "post",
+      "contentType": "application/json",
+      "payload": JSON.stringify(payload),
+      "muteHttpExceptions": true
+    });
+  } catch (err) {
+    Logger.log("ไม่สามารถส่งแจ้งเตือน Telegram ได้: " + err.toString());
+  }
+}

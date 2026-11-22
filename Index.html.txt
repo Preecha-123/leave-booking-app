@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Google Fonts: Sarabun -->
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body { 
+      background-color: #f4f6f9; 
+      font-family: 'Sarabun', sans-serif;
+      padding: 30px 15px;
+    }
+    .card-box {
+      background: #ffffff;
+      border-radius: 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      padding: 25px;
+      border: 1px solid #eaedf1;
+    }
+    .badge-shift {
+      font-size: 0.85rem;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .shift-n1 { background-color: #e0f2fe; color: #0284c7; }
+    .shift-n2 { background-color: #fef3c7; color: #d97706; }
+    .shift-n3 { background-color: #f3e8ff; color: #7e22ce; }
+    .shift-holiday { background-color: #fee2e2; color: #dc2626; }
+    
+    .status-empty {
+      color: #16a34a;
+      background-color: #dcfce7;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-taken {
+      color: #1d4ed8;
+      background-color: #dbeafe;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .status-holiday-text {
+      color: #dc2626;
+      background-color: #fee2e2;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-block;
+    }
+    .text-holiday-danger {
+      color: #dc2626 !important;
+      font-weight: 700 !important;
+    }
+    .text-taken-blue {
+      color: #1d4ed8 !important;
+      font-weight: 600;
+    }
+    .required-star { color: #dc3545; }
+    .table-container {
+      max-height: 650px;
+      overflow-y: auto;
+    }
+    .table-hover tbody tr:hover {
+      background-color: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid px-lg-5">
+    <div class="row g-4">
+      
+      <!-- ฝั่งซ้าย: ฟอร์มจองวันลา -->
+      <div class="col-lg-4">
+        <div class="card-box sticky-top" style="top: 25px;">
+          <h4 class="text-primary fw-bold mb-2">📅 จองสิทธิ์วันลา</h4>
+          <p class="text-muted small mb-4">กรอกข้อมูลและเลือกวันที่ที่ต้องการลา</p>
+          
+          <form id="leaveForm" onsubmit="handleFormSubmit(event)">
+            <div class="mb-3">
+              <label class="form-label fw-bold">ชื่อ-นามสกุล <span class="required-star">*</span></label>
+              <input type="text" id="userName" class="form-control" placeholder="ระบุชื่อจริงและนามสกุล" required>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label fw-bold">เลือกวันที่ต้องการลา <span class="required-star">*</span></label>
+              <select id="dateSelect" class="form-select" required disabled>
+                <option value="">กำลังดาวน์โหลดวันที่ว่าง...</option>
+              </select>
+            </div>
+
+            <hr class="my-3">
+            <p class="text-secondary small fw-bold mb-2">📋 ข้อมูลเพิ่มเติม (ไม่บังคับ)</p>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">เบอร์โทรศัพท์มือถือ</label>
+              <input type="tel" id="userPhone" class="form-control" placeholder="เช่น 0891234567" pattern="[0-9]{9,10}">
+            </div>
+
+            <div class="mb-4">
+              <label class="form-label fw-semibold">ชื่อคนแทนงาน</label>
+              <input type="text" id="backupName" class="form-control" placeholder="ระบุชื่อคนทำงานแทน">
+            </div>
+
+            <button type="submit" id="submitBtn" class="btn btn-primary w-100 py-2.5 fw-bold" disabled>
+              ยืนยันการจองวันลา
+            </button>
+          </form>
+
+          <div id="statusMessage" class="mt-3"></div>
+        </div>
+      </div>
+
+      <!-- ฝั่งขวา: ตารางเวรและการลา (แท็บ View) -->
+      <div class="col-lg-8">
+        <div class="card-box">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+              <h4 class="fw-bold mb-0 text-dark">📋 ตารางเวรและการลาประจำเดือน</h4>
+              <small class="text-muted">ข้อมูลอัปเดตสดจากชีต View</small>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadAllData()">
+              🔄 รีเฟรชตาราง
+            </button>
+          </div>
+
+          <div class="table-container border rounded">
+            <table class="table table-hover align-middle mb-0 text-center">
+              <thead class="table-light sticky-top">
+                <tr>
+                  <th style="width: 12%;">กะ</th>
+                  <th style="width: 15%;">วัน</th>
+                  <th style="width: 25%;">วันที่</th>
+                  <th style="width: 25%;">ชื่อผู้ลา</th>
+                  <th style="width: 23%;">ชื่อแทน</th>
+                </tr>
+              </thead>
+              <tbody id="viewTableBody">
+                <tr>
+                  <td colspan="5" class="py-4 text-muted">กำลังโหลดข้อมูลตาราง...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      loadAllData();
+    };
+
+    function loadAllData() {
+      google.script.run.withSuccessHandler(populateDates).getAvailableDates();
+      google.script.run.withSuccessHandler(renderViewTable).getViewData();
+    }
+
+    function populateDates(dates) {
+      var select = document.getElementById('dateSelect');
+      var btn = document.getElementById('submitBtn');
+      select.innerHTML = '';
+      
+      if (!dates || dates.length === 0) {
+        select.innerHTML = '<option value="">--- วันลาถูกจองเต็มทุกวันแล้ว ---</option>';
+        select.disabled = true;
+        btn.disabled = true;
+      } else {
+        select.innerHTML = '<option value="">-- กรุณาเลือกวันที่ต้องการลา --</option>';
+        dates.forEach(function(d) {
+          var opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          select.appendChild(opt);
+        });
+        select.disabled = false;
+        btn.disabled = false;
+      }
+    }
+
+    function renderViewTable(rows) {
+      var tbody = document.getElementById('viewTableBody');
+      tbody.innerHTML = '';
+
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-muted">ไม่พบข้อมูลในตาราง</td></tr>';
+        return;
+      }
+
+      rows.forEach(function(r) {
+        var shift = (r[0] || "").trim();
+        var dayName = (r[1] || "").trim();
+        var dateVal = (r[2] || "").trim();
+        var leavePerson = (r[3] || "").trim();
+        var backupPerson = (r[4] || "").trim();
+
+        var isHoliday = (shift === 'วันหยุด' || leavePerson === 'วันหยุด');
+        var isTaken = (leavePerson !== 'ว่าง' && leavePerson !== 'วันหยุด' && leavePerson !== '');
+
+        var shiftBadge = '<span class="badge-shift shift-n1">' + shift + '</span>';
+        if (shift === 'วันหยุด') {
+          shiftBadge = '<span class="badge-shift shift-holiday">วันหยุด</span>';
+        } else if (shift === 'N2') {
+          shiftBadge = '<span class="badge-shift shift-n2">N2</span>';
+        } else if (shift === 'N3') {
+          shiftBadge = '<span class="badge-shift shift-n3">N3</span>';
+        }
+
+        var leaveDisplay = '-';
+        if (leavePerson === 'ว่าง') {
+          leaveDisplay = '<span class="status-empty">🟢 ว่าง</span>';
+        } else if (leavePerson === 'วันหยุด') {
+          leaveDisplay = '<span class="status-holiday-text"> วันหยุด</span>';
+        } else if (leavePerson !== '') {
+          leaveDisplay = '<span class="status-taken">👤 ' + leavePerson + '</span>';
+        }
+
+        var textClass = '';
+        if (isHoliday) {
+          textClass = ' class="text-holiday-danger"';
+        } else if (isTaken) {
+          textClass = ' class="text-taken-blue"';
+        }
+
+        var tr = document.createElement('tr');
+        if (isHoliday) {
+          tr.style.backgroundColor = '#fef2f2';
+        } else if (isTaken) {
+          tr.style.backgroundColor = '#eff6ff';
+        }
+
+        tr.innerHTML = 
+          '<td>' + shiftBadge + '</td>' +
+          '<td' + textClass + '>' + dayName + '</td>' +
+          '<td' + textClass + '>' + dateVal + '</td>' +
+          '<td>' + leaveDisplay + '</td>' +
+          '<td>' + (backupPerson ? '<span class="' + (isTaken ? 'text-taken-blue' : 'text-secondary') + ' fw-semibold">' + backupPerson + '</span>' : '<span class="text-muted">-</span>') + '</td>';
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      var name = document.getElementById('userName').value.trim();
+      var date = document.getElementById('dateSelect').value;
+      var phone = document.getElementById('userPhone').value.trim();
+      var backup = document.getElementById('backupName').value.trim();
+      var btn = document.getElementById('submitBtn');
+      var statusDiv = document.getElementById('statusMessage');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ กำลังบันทึกและอัปเดตตาราง...';
+      statusDiv.innerHTML = '';
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          populateDates(response.updatedDates);
+          renderViewTable(response.updatedView);
+          btn.textContent = 'ยืนยันการจองวันลา';
+          
+          if (response.success) {
+            showStatus(response.message, 'success');
+            document.getElementById('userName').value = '';
+            document.getElementById('userPhone').value = '';
+            document.getElementById('backupName').value = '';
+          } else {
+            showStatus(response.message, 'danger');
+          }
+        })
+        .withFailureHandler(function(error) {
+          showStatus('เกิดความผิดพลาด: ' + error.message, 'danger');
+          btn.disabled = false;
+          btn.textContent = 'ยืนยันการจองวันลา';
+        })
+        .submitBooking(name, date, backup, phone);
+    }
+
+    function showStatus(msg, type) {
+      var statusDiv = document.getElementById('statusMessage');
+      statusDiv.innerHTML = '<div class="alert alert-' + type + ' m-0">' + msg + '</div>';
+    }
+  </script>
+</body>
+</html>
